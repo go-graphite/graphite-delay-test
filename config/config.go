@@ -22,6 +22,7 @@ type CheckerConfig struct {
 	InternalStatsDumpInterval time.Duration `yaml:"internal_stats_dump_interval"`
 	CheckInterval        time.Duration `yaml:"check_interval"`
 	LogToConsole         bool `yaml:"log_to_console"`
+	WarmupEvents	     int `yaml:"warmup_events"`
 }
 
 var defaultCfg = CheckerConfig{
@@ -39,6 +40,7 @@ var defaultCfg = CheckerConfig{
 	StatsInterval:        1 * time.Second,
 	InternalStatsDumpInterval: 1 * time.Second,
 	LogToConsole:         true,
+	WarmupEvents:         120,
 }
 
 var hostname string
@@ -111,6 +113,10 @@ func Validate(cfg *CheckerConfig, name string) error {
 	if !cfg.LogToConsole {
 		cfg.LogToConsole = defaultCfg.LogToConsole
 	}
+	if cfg.WarmupEvents == 0 {
+		cfg.WarmupEvents = defaultCfg.WarmupEvents
+	}
+
 	cfg.MetricName = expandString(cfg.MetricName, cfg, name)
 	cfg.ResultMetricPattern = expandString(cfg.ResultMetricPattern, cfg, name)
 

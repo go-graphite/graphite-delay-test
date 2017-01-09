@@ -181,7 +181,7 @@ func (checker *Checker) doChecks(senderChan <-chan int64) {
 	if checker.CarbonType == "graphite-web-0.9" {
 		responder = GRAPHITEWEB09
 	}
-	baseURL := checker.CheckURL + "/?format=json&cache=0&noCache&target=" + checker.MetricName + "&from="
+	baseURL := checker.CheckURL + "/?format=json&noCache=1&target=" + checker.MetricName + "&from="
 	var body []byte
 	for {
 		select {
@@ -197,7 +197,9 @@ func (checker *Checker) doChecks(senderChan <-chan int64) {
 			tick := time.Tick(checker.RetryTime)
 			timeoutHappened := false
 			for {
-				r := graphiteResponse{}
+
+				var graphitewebResponse []graphiteResponse
+				carbonserverResponse := graphiteResponse{}
 				resp, err := client.Get(checkURL)
 				found := false
 				if err != nil {
@@ -214,15 +216,18 @@ func (checker *Checker) doChecks(senderChan <-chan int64) {
 					goto END
 				}
 
-
-				err = json.Unmarshal(body, &r)
+				if responder == CARBONSERVER {
+					err = json.Unmarshal(body, &carbonserverResponse)
+				} else {
+					err = json.Unmarshal(body, &graphitewebResponse)
+				}
 				if err != nil {
 					checker.logger.Error("Can't decode json", zap.String("url", checkURL), zap.Error(err))
 					goto END
 				}
 				if responder == CARBONSERVER {
-					if len(r.metrics) != 0 {
-						for _, v := range r.metrics[0].Values {
+					if len(carbonserverResponse.metrics) != 0 {
+						for _, v := range carbonserverResponse.metrics[0].Values {
 							if math.Abs(v-tsF64) < precision {
 								found = true
 								break
@@ -230,8 +235,9 @@ func (checker *Checker) doChecks(senderChan <-chan int64) {
 						}
 					}
 				} else {
-					if len(r.Datapoints) != 0 {
-						for _, t := range r.Datapoints {
+					checker.logger.Info("Got body", zap.String("body", string(body)))
+					if len(graphitewebResponse[0].Datapoints) != 0 {
+						for _, t := range graphitewebResponse[0].Datapoints {
 							v := t[0]
 							if math.Abs(v-tsF64) < precision {
 								found = true
@@ -249,7 +255,7 @@ func (checker *Checker) doChecks(senderChan <-chan int64) {
 
 				select {
 				case <-timeout:
-					checker.logger.Info("Checker timeout", zap.Int64("timestamp", ts))
+					checker.logger.Info("Checker timeout", zap.Int64("timestamp", ts), zap.String("url", checkURL))
 					checker.metrics.CheckTimeouts.Add(1)
 					timeoutHappened = true
 				case <-tick:
@@ -267,7 +273,7 @@ func (checker *Checker) doChecks(senderChan <-chan int64) {
 func (checker *Checker) Run() {
 	senderChan := make(chan int64) // Send the value we want to check for.
 	go checker.generateIntervalmetrics(senderChan, checker.exit)
-	checker.logger.Info("Generating 5 events")
-	time.Sleep(5 * checker.CheckInterval)
+	checker.logger.Info("Generating warmup events", zap.Int("events", checker.WarmupEvents))
+	time.Sleep(time.Duration(checker.WarmupEvents) * checker.CheckInterval)
 	checker.doChecks(senderChan)
 }
